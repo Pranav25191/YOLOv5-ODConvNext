@@ -12,6 +12,7 @@ import numpy as np
 import torch
 
 from utils import TryExcept, threaded
+import math
 
 
 def fitness(x):
@@ -258,6 +259,69 @@ def bbox_iou(box1, box2, xywh=True, GIoU=False, DIoU=False, CIoU=False, eps=1e-7
         c_area = cw * ch + eps  # convex area
         return iou - (c_area - union) / c_area  # GIoU https://arxiv.org/pdf/1902.09630.pdf
     return iou  # IoU
+
+def bbox_siou(box1, box2, xywh=True,eps=1e-7):
+
+    theta = 0.001
+
+    # Get the coordinates of bounding boxes
+    if xywh:  # transform from xywh to xyxy
+        (x1, y1, w1, h1), (x2, y2, w2, h2) = box1.chunk(4, -1), box2.chunk(4, -1)
+        w1_, h1_, w2_, h2_ = w1 / 2, h1 / 2, w2 / 2, h2 / 2
+        b1_x1, b1_x2, b1_y1, b1_y2 = x1 - w1_, x1 + w1_, y1 - h1_, y1 + h1_
+        b2_x1, b2_x2, b2_y1, b2_y2 = x2 - w2_, x2 + w2_, y2 - h2_, y2 + h2_
+    else:  # x1, y1, x2, y2 = box1
+        b1_x1, b1_y1, b1_x2, b1_y2 = box1.chunk(4, -1)
+        b2_x1, b2_y1, b2_x2, b2_y2 = box2.chunk(4, -1)
+        w1, h1 = b1_x2 - b1_x1, (b1_y2 - b1_y1).clamp(eps)
+        w2, h2 = b2_x2 - b2_x1, (b2_y2 - b2_y1).clamp(eps)
+
+    # Intersection area
+    inter = (b1_x2.minimum(b2_x2) - b1_x1.maximum(b2_x1)).clamp(0) * \
+            (b1_y2.minimum(b2_y2) - b1_y1.maximum(b2_y1)).clamp(0)
+
+    # Union Area
+    union = w1 * h1 + w2 * h2 - inter + eps
+
+    # Clamp height and width
+    w1 = torch.clamp(w1, min=eps)
+    w2 = torch.clamp(w2, min=eps)
+    h1 = torch.clamp(h1, min=eps)
+    h2 = torch.clamp(h2, min=eps)
+
+    # IoU
+    iou = torch.where(union > 0, inter / union, torch.zeros_like(union))
+
+    siou_vals = 1 - iou
+
+    #calculate center points
+    b_cx = (b1_x1+b1_x2)/2
+    b_cy = (b1_y1+b1_y2)/2
+    b_cx_gt = (b2_x1+b2_x2)/2
+    b_cy_gt = (b2_y1+b2_y2)/2
+    
+    #gamma
+    numer = torch.max(b_cy_gt,b_cy) - torch.min(b_cy_gt,b_cy)
+    denom = torch.sqrt( (b_cx_gt - b_cx)**2 + (b_cy_gt - b_cy)**2  ) + eps
+    # Replace NaN values with eps
+    denom = torch.where(torch.isnan(denom), torch.tensor(eps, device=denom.device), denom)
+    gamma = 2*( (torch.sin(torch.asin( torch.clamp( numer/denom , -1.0, 1.0) ) - math.pi/4))**2 ) + 1
+
+    c_w = b1_x2.maximum(b2_x2) - b1_x1.minimum(b2_x1)  # convex (smallest enclosing box) width
+    c_h = b1_y2.maximum(b2_y2) - b1_y1.minimum(b2_y1)  # convex height
+
+    ro_x = ((b_cx_gt - b_cx)/c_w)**2
+    ro_y = ((b_cy_gt - b_cy)/c_h)**2
+
+    w_w = torch.abs(w1 - w2)/torch.max(w1,w2)
+    w_h = torch.abs(h1 - h2)/torch.max(h1,h2)
+
+    delta = 1 - torch.exp(-gamma*ro_x) + 1 - torch.exp(-gamma*ro_y)
+    omega = (1 - torch.exp(-w_w))**theta + (1 - torch.exp(-w_h))**theta
+
+    siou_vals += (delta + omega)/2
+
+    return siou_vals
 
 
 def box_iou(box1, box2, eps=1e-7):
