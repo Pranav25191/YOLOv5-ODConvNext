@@ -260,6 +260,8 @@ def bbox_iou(box1, box2, xywh=True, GIoU=False, DIoU=False, CIoU=False, eps=1e-7
         return iou - (c_area - union) / c_area  # GIoU https://arxiv.org/pdf/1902.09630.pdf
     return iou  # IoU
 
+import math
+
 def bbox_siou(box1, box2, xywh=True,eps=1e-7):
 
     theta = 0.001
@@ -302,10 +304,10 @@ def bbox_siou(box1, box2, xywh=True,eps=1e-7):
     
     #gamma
     numer = torch.max(b_cy_gt,b_cy) - torch.min(b_cy_gt,b_cy)
-    denom = torch.sqrt( (b_cx_gt - b_cx)**2 + (b_cy_gt - b_cy)**2  ) + eps
-    # Replace NaN values with eps
-    denom = torch.where(torch.isnan(denom), torch.tensor(eps, device=denom.device), denom)
-    gamma = 2*( (torch.sin(torch.asin( torch.clamp( numer/denom , -1.0, 1.0) ) - math.pi/4))**2 ) + 1
+    denom = torch.sqrt(torch.clamp((b_cx_gt - b_cx)**2 + (b_cy_gt - b_cy)**2, eps))
+
+    gamma = 2 * ((torch.sin(torch.asin(torch.clamp(numer / denom, -1.0, 1.0)) - math.pi / 4))**2) + 1
+
 
     c_w = b1_x2.maximum(b2_x2) - b1_x1.minimum(b2_x1)  # convex (smallest enclosing box) width
     c_h = b1_y2.maximum(b2_y2) - b1_y1.minimum(b2_y1)  # convex height
@@ -316,8 +318,11 @@ def bbox_siou(box1, box2, xywh=True,eps=1e-7):
     w_w = torch.abs(w1 - w2)/torch.max(w1,w2)
     w_h = torch.abs(h1 - h2)/torch.max(h1,h2)
 
-    delta = 1 - torch.exp(-gamma*ro_x) + 1 - torch.exp(-gamma*ro_y)
+    delta = 1 - torch.exp(-gamma * ro_x) + 1 - torch.exp(-gamma * ro_y)
+    delta = torch.where(torch.isnan(delta), torch.tensor(eps, device=delta.device), delta)
+
     omega = (1 - torch.exp(-w_w))**theta + (1 - torch.exp(-w_h))**theta
+    omega = torch.where(torch.isnan(omega), torch.tensor(eps, device=omega.device), omega)
 
     siou_vals += (delta + omega)/2
 
