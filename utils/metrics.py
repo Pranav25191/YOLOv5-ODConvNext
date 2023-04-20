@@ -292,7 +292,7 @@ def bbox_eiou(box1, box2, xywh=True, eps=1e-7):
     rho2_wi = (w1 - w2)**2   #width dist square
     rho2_h = (h1 - h2)**2   #height dist square
     eiou_val = 1 - iou + rho2/c2 +  rho2_wi/cw**2 + rho2_h/ch**2
-    return eiou_val  # IoU
+    return eiou_val, iou  # IoU
 
 
 def box_iou(box1, box2, eps=1e-7):
