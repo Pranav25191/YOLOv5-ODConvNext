@@ -284,15 +284,25 @@ def bbox_eiou(box1, box2, xywh=True, eps=1e-7):
 
     # IoU
     iou = inter / union  
+
     cw = b1_x2.maximum(b2_x2) - b1_x1.minimum(b2_x1)  # convex (smallest enclosing box) width
     ch = b1_y2.maximum(b2_y2) - b1_y1.minimum(b2_y1)  # convex height
-    c_area = cw * ch + eps  # convex area
+    # Distance or Complete IoU https://arxiv.org/abs/1911.08287v1
     c2 = cw ** 2 + ch ** 2 + eps  # convex diagonal squared
+    rho2 = ((b2_x1 + b2_x2 - b1_x1 - b1_x2) ** 2 + (b2_y1 + b2_y2 - b1_y1 - b1_y2) ** 2) / 4  # center dist ** 2
+    # https://github.com/Zzh-tju/DIoU-SSD-pytorch/blob/master/utils/box/box_utils.py#L47
+    v = (4 / math.pi ** 2) * (torch.atan(w2 / h2) - torch.atan(w1 / h1)).pow(2)
+    with torch.no_grad():
+      alpha = v / (v - iou + (1 + eps))
+    ciou = iou - (rho2 / c2 + v * alpha)  # CIoU
+    c_area = cw * ch + eps  # convex area
+
+    #eiou calculation
     rho2 = ((b2_x1 + b2_x2 - b1_x1 - b1_x2) ** 2 + (b2_y1 + b2_y2 - b1_y1 - b1_y2) ** 2) / 4  # center distance squared
     rho2_wi = (w1 - w2)**2   #width dist square
     rho2_h = (h1 - h2)**2   #height dist square
     eiou_val = 1 - iou + rho2/c2 +  rho2_wi/cw**2 + rho2_h/ch**2
-    return eiou_val, iou  # IoU
+    return eiou_val, ciou 
 
 
 def box_iou(box1, box2, eps=1e-7):
