@@ -260,11 +260,10 @@ def bbox_iou(box1, box2, xywh=True, GIoU=False, DIoU=False, CIoU=False, eps=1e-7
         return iou - (c_area - union) / c_area  # GIoU https://arxiv.org/pdf/1902.09630.pdf
     return iou  # IoU
 
-import math
 
-def bbox_siou(box1, box2, xywh=True,eps=1e-7):
+def bbox_siou(box1, box2, xywh=True,eps=1e-7, GIoU=False, DIoU=False, CIoU=False):
 
-    theta = 0.001
+    theta = 4 #2-6 use genetic algorithm for each dataset
 
     # Get the coordinates of bounding boxes
     if xywh:  # transform from xywh to xyxy
@@ -294,39 +293,65 @@ def bbox_siou(box1, box2, xywh=True,eps=1e-7):
     # IoU
     iou = torch.where(union > 0, inter / union, torch.zeros_like(union))
 
-    siou_vals = 1 - iou
-
+    #ciou calculation
+    if CIoU or DIoU or GIoU:
+        cw = b1_x2.maximum(b2_x2) - b1_x1.minimum(b2_x1)  # convex (smallest enclosing box) width
+        ch = b1_y2.maximum(b2_y2) - b1_y1.minimum(b2_y1)  # convex height
+        if CIoU or DIoU:  # Distance or Complete IoU https://arxiv.org/abs/1911.08287v1
+            c2 = cw ** 2 + ch ** 2 + eps  # convex diagonal squared
+            rho2 = ((b2_x1 + b2_x2 - b1_x1 - b1_x2) ** 2 + (b2_y1 + b2_y2 - b1_y1 - b1_y2) ** 2) / 4  # center dist ** 2
+            if CIoU:  # https://github.com/Zzh-tju/DIoU-SSD-pytorch/blob/master/utils/box/box_utils.py#L47
+                v = (4 / math.pi ** 2) * (torch.atan(w2 / h2) - torch.atan(w1 / h1)).pow(2)
+                with torch.no_grad():
+                    alpha = v / (v - iou + (1 + eps))
+                ciou = iou - (rho2 / c2 + v * alpha)  # CIoU
+            diou = iou - rho2 / c2  # DIoU
+        c_area = cw * ch + eps  # convex area
+        giou = iou - (c_area - union) / c_area  # GIoU https://arxiv.org/pdf/1902.09630.pdf
+    
     #calculate center points
     b_cx = (b1_x1+b1_x2)/2
     b_cy = (b1_y1+b1_y2)/2
     b_cx_gt = (b2_x1+b2_x2)/2
     b_cy_gt = (b2_y1+b2_y2)/2
     
-    #gamma
-    numer = torch.max(b_cy_gt,b_cy) - torch.min(b_cy_gt,b_cy)
-    denom = torch.sqrt(torch.clamp((b_cx_gt - b_cx)**2 + (b_cy_gt - b_cy)**2, eps))
+    #theta parameter set
+    opp = torch.abs( b_cy - b_cy_gt )
+    hyp = torch.sqrt(  ( b_cx_gt - b_cx )**2 - ( b_cy_gt - b_cy )**2  )
 
-    gamma = 2 * ((torch.sin(torch.asin(torch.clamp(numer / denom, -1.0, 1.0)) - math.pi / 4))**2) + 1
+    alpha = torch.asin( opp / hyp )
+    alpha = torch.where(torch.isnan(alpha), torch.tensor(eps, device=alpha.device), alpha)
+    theta = alpha
+    # print("theta : ",torch.isnan(theta).any().item())
 
-
-    c_w = b1_x2.maximum(b2_x2) - b1_x1.minimum(b2_x1)  # convex (smallest enclosing box) width
-    c_h = b1_y2.maximum(b2_y2) - b1_y1.minimum(b2_y1)  # convex height
-
+    # angle loss
+    x = torch.sin(theta)
+    l_angle = 1 - 2 * ( torch.sin( torch.asin(x) - math.pi / 4 ) )**2
+    # print("l_angle : ",torch.isnan(l_angle).any().item())
+    # distance loss
+    gamma = 2 - l_angle
+    x_max, _ = torch.max(torch.stack([b1_x1,b1_x2,b2_x1,b2_x2]), dim=0)
+    x_min, _ = torch.min(torch.stack([b1_x1,b1_x2,b2_x1,b2_x2]), dim=0)
+    y_max, _ = torch.max(torch.stack([b1_y1,b1_y2,b2_y1,b2_y2]), dim=0)
+    y_min, _ = torch.min(torch.stack([b1_y1,b1_y2,b2_y1,b2_y2]), dim=0)
+    c_w = x_max - x_min
+    c_h = y_max - y_min
     ro_x = ((b_cx_gt - b_cx)/c_w)**2
     ro_y = ((b_cy_gt - b_cy)/c_h)**2
+    l_dis = 1 - torch.exp(-gamma * ro_x) + 1 - torch.exp(-gamma * ro_y)
+    # print("l_dis : ",torch.isnan(l_dis).any().item())
 
+    #shape loss
+    theta = 4
     w_w = torch.abs(w1 - w2)/torch.max(w1,w2)
     w_h = torch.abs(h1 - h2)/torch.max(h1,h2)
+    l_shape = (1 - torch.exp(-w_w))**theta + (1 - torch.exp(-w_h))**theta
+    # print("l_shape : ",torch.isnan(l_shape).any().item())
 
-    delta = 1 - torch.exp(-gamma * ro_x) + 1 - torch.exp(-gamma * ro_y)
-    delta = torch.where(torch.isnan(delta), torch.tensor(eps, device=delta.device), delta)
+    siou_loss = 1 - iou + (l_dis + l_shape)/2
 
-    omega = (1 - torch.exp(-w_w))**theta + (1 - torch.exp(-w_h))**theta
-    omega = torch.where(torch.isnan(omega), torch.tensor(eps, device=omega.device), omega)
+    return siou_loss,ciou
 
-    siou_vals += (delta + omega)/2
-
-    return siou_vals
 
 
 def box_iou(box1, box2, eps=1e-7):
