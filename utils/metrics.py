@@ -345,7 +345,18 @@ def bbox_siou(box1, box2, xywh=True,eps=1e-7, GIoU=False, DIoU=False, CIoU=False
     l_shape = (1 - torch.exp(-w_w))**theta + (1 - torch.exp(-w_h))**theta
     # print("l_shape : ",torch.isnan(l_shape).any().item())
 
-    siou_loss = 1 - iou + (l_dis + l_shape)/2
+
+    #eiou
+    cw = b1_x2.maximum(b2_x2) - b1_x1.minimum(b2_x1)  # convex (smallest enclosing box) width
+    ch = b1_y2.maximum(b2_y2) - b1_y1.minimum(b2_y1)  # convex height
+    c_area = cw * ch + eps  # convex area
+    c2 = cw ** 2 + ch ** 2 + eps  # convex diagonal squared
+    rho2 = ((b2_x1 + b2_x2 - b1_x1 - b1_x2) ** 2 + (b2_y1 + b2_y2 - b1_y1 - b1_y2) ** 2) / 4  # center distance squared
+    rho2_wi = (w1 - w2)**2   #width dist square
+    rho2_h = (h1 - h2)**2   #height dist square
+
+    #combined
+    siou_loss = 1 - iou + (l_dis + l_shape)/2 + rho2/c2 +  rho2_wi/cw**2 + rho2_h/ch**2
 
     return siou_loss,ciou
 
