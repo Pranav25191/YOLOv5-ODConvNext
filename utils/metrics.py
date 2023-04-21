@@ -317,7 +317,7 @@ def bbox_cov_iou(box1, box2, xywh=True,eps=1e-7, GIoU=False, DIoU=False, CIoU=Fa
 
     c_2 = (whole_t_l_x - whole_b_r_x)**2 + (whole_t_l_y - whole_b_r_y)**2 + eps
 
-    L_cd = (ro_2_top_left + ro_2_bot_right)/4*c_2
+    L_cd = (ro_2_top_left + ro_2_bot_right)/(4*c_2)
 
     #coverage
     gt_area = w2*h2 + eps
