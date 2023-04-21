@@ -302,7 +302,17 @@ def bbox_eiou(box1, box2, xywh=True, eps=1e-7):
     rho2_wi = (w1 - w2)**2   #width dist square
     rho2_h = (h1 - h2)**2   #height dist square
     eiou_val = 1 - iou + rho2/c2 +  rho2_wi/cw**2 + rho2_h/ch**2
-    return eiou_val, ciou 
+
+
+    CIOU =  iou - (rho2 / c2 + v * alpha)  # CIoU
+    DIOU =  iou - rho2 / c2  # DIoU
+    c_area = cw * ch + eps  # convex area
+    GIOU =  iou - (c_area - union) / c_area  # GIoU
+
+    w1,w2,w3,w4 = 0.1, 0.1, 0.1, 0.7
+    
+    overall_loss =  w1*CIOU + w2*DIOU + w3*GIOU + w4*eiou_val
+    return overall_loss, ciou 
 
 
 def box_iou(box1, box2, eps=1e-7):
