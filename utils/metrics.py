@@ -261,9 +261,8 @@ def bbox_iou(box1, box2, xywh=True, GIoU=False, DIoU=False, CIoU=False, eps=1e-7
     return iou  # IoU
 
 
-def bbox_siou(box1, box2, xywh=True,eps=1e-7, GIoU=False, DIoU=False, CIoU=False):
-
-    theta = 4 #2-6 use genetic algorithm for each dataset
+def bbox_cov_iou(box1, box2, xywh=True,eps=1e-7, GIoU=False, DIoU=False, CIoU=False):
+    alpha = 0.8 #hyperparam
 
     # Get the coordinates of bounding boxes
     if xywh:  # transform from xywh to xyxy
@@ -287,6 +286,43 @@ def bbox_siou(box1, box2, xywh=True,eps=1e-7, GIoU=False, DIoU=False, CIoU=False
 
     # IoU
     iou = inter/union
+    L_iou = 1 - iou
+
+
+    #corners loss
+    gt_le_top_x = torch.min(b2_x1,b2_x2)
+    gt_le_top_y = torch.max(b2_y1,b2_y2)
+    gt_ri_bot_x = torch.max(b2_x1,b2_x2)
+    gt_ri_bot_y = torch.min(b2_y1,b2_y2)
+
+    pr_le_top_x = torch.min(b1_x1,b1_x2)
+    pr_le_top_y = torch.max(b1_y1,b1_y2)
+    pr_ri_bot_x = torch.max(b1_x1,b1_x2)
+    pr_ri_bot_y = torch.min(b1_y1,b1_y2)
+
+    ro_2_top_left = (gt_le_top_x - pr_le_top_x)**2 + (gt_le_top_y - pr_le_top_y)**2
+    ro_2_bot_right = (gt_ri_bot_x - pr_ri_bot_x)**2 + (gt_ri_bot_y - pr_ri_bot_y)**2
+
+    whole_b_r_x = torch.max(gt_ri_bot_x,pr_ri_bot_x)
+    whole_b_r_y = torch.min(pr_ri_bot_y,gt_ri_bot_y)
+
+    whole_t_l_x = torch.min(gt_le_top_x,pr_le_top_x)
+    whole_t_l_y = torch.max(gt_le_top_y,pr_le_top_y)
+
+    diag_dist_2 = (whole_t_l_x - whole_b_r_x)**2 + (whole_t_l_y - whole_b_r_y)**2 + eps
+
+    L_cd = (ro_2_top_left + ro_2_bot_right)/4*diag_dist_2
+
+    #coverage
+    gt_area = w2*h2 + eps
+    cov = inter/gt_area
+    L_cov = alpha*iou + (1-alpha)*cov
+
+    #shape restriction
+    v = (4/math.pi**2)* (torch.atan(w2/h2) - torch.atan(w1/h1) )**2
+
+    L_co_IoU = 1 - v * L_cov + L_cd
+
 
     #ciou calculation
     if CIoU or DIoU or GIoU:
@@ -304,50 +340,8 @@ def bbox_siou(box1, box2, xywh=True,eps=1e-7, GIoU=False, DIoU=False, CIoU=False
         c_area = cw * ch + eps  # convex area
         giou = iou - (c_area - union) / c_area  # GIoU https://arxiv.org/pdf/1902.09630.pdf
     
-    #calculate center points
-    b_cx = (b1_x1+b1_x2)/2
-    b_cy = (b1_y1+b1_y2)/2
-    b_cx_gt = (b2_x1+b2_x2)/2
-    b_cy_gt = (b2_y1+b2_y2)/2
-    
-    #theta parameter set
-    opp = torch.abs( b_cy - b_cy_gt )
-    hyp = torch.sqrt(  ( b_cx_gt - b_cx )**2 - ( b_cy_gt - b_cy )**2  )
 
-    alpha = torch.asin( opp / hyp )
-    alpha = torch.where(torch.isnan(alpha), torch.tensor(eps, device=alpha.device), alpha)
-    theta = alpha
-    # print("theta : ",torch.isnan(theta).any().item())
-
-    # angle loss
-    c_h = torch.max(b_cy_gt,b_cy) - torch.min(b_cy_gt,b_cy)
-    sigma = torch.sqrt( (b_cx_gt - b_cx)**2 + (b_cy_gt - b_cy)**2 ) + eps
-    x = c_h / sigma
-    l_angle = 1 - 2 * ( torch.sin( torch.asin(x) - math.pi / 4 ) )**2
-    # print("l_angle : ",torch.isnan(l_angle).any().item())
-    # distance loss
-    gamma = 2 - l_angle
-    x_max, _ = torch.max(torch.stack([b1_x1,b1_x2,b2_x1,b2_x2]), dim=0)
-    x_min, _ = torch.min(torch.stack([b1_x1,b1_x2,b2_x1,b2_x2]), dim=0)
-    y_max, _ = torch.max(torch.stack([b1_y1,b1_y2,b2_y1,b2_y2]), dim=0)
-    y_min, _ = torch.min(torch.stack([b1_y1,b1_y2,b2_y1,b2_y2]), dim=0)
-    c_w = x_max - x_min
-    c_h = y_max - y_min
-    ro_x = ((b_cx_gt - b_cx)/c_w)**2
-    ro_y = ((b_cy_gt - b_cy)/c_h)**2
-    l_dis = 1 - torch.exp(-gamma * ro_x) + 1 - torch.exp(-gamma * ro_y)
-    # print("l_dis : ",torch.isnan(l_dis).any().item())
-
-    #shape loss
-    theta = 4
-    w_w = torch.abs(w1 - w2)/torch.max(w1,w2)
-    w_h = torch.abs(h1 - h2)/torch.max(h1,h2)
-    l_shape = (1 - torch.exp(-w_w))**theta + (1 - torch.exp(-w_h))**theta
-    # print("l_shape : ",torch.isnan(l_shape).any().item())
-
-    siou_loss = 1 - iou + (l_dis + l_shape)/2
-
-    return siou_loss,ciou
+    return L_co_IoU,ciou
 
 
 

@@ -6,7 +6,7 @@ Loss functions
 import torch
 import torch.nn as nn
 import pdb
-from utils.metrics import bbox_siou
+from utils.metrics import bbox_cov_iou
 from utils.torch_utils import de_parallel
 
 def smooth_BCE(eps=0.1):  # https://github.com/ultralytics/yolov3/issues/238#issuecomment-598028441
@@ -137,9 +137,9 @@ class ComputeLoss:
                 pxy = pxy.sigmoid() * 2 - 0.5
                 pwh = (pwh.sigmoid() * 2) ** 2 * anchors[i]
                 pbox = torch.cat((pxy, pwh), 1)  # predicted box
-                siou,iou = bbox_siou(pbox, tbox[i],CIoU = True)  # siou(prediction, target)
-                siou,iou = siou.squeeze(),iou.squeeze()
-                lbox += (siou).mean()  # iou loss
+                lcov_iou,iou = bbox_cov_iou(pbox, tbox[i],CIoU = True)  # siou(prediction, target)
+                lcov_iou,iou = lcov_iou.squeeze(),iou.squeeze()
+                lbox += (lcov_iou).mean()  # iou loss
 
                 # Objectness
                 iou = iou.detach().clamp(0).type(tobj.dtype)
