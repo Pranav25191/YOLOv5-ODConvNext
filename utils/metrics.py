@@ -303,15 +303,21 @@ def bbox_cov_iou(box1, box2, xywh=True,eps=1e-7, GIoU=False, DIoU=False, CIoU=Fa
     ro_2_top_left = (gt_le_top_x - pr_le_top_x)**2 + (gt_le_top_y - pr_le_top_y)**2
     ro_2_bot_right = (gt_ri_bot_x - pr_ri_bot_x)**2 + (gt_ri_bot_y - pr_ri_bot_y)**2
 
-    whole_b_r_x = torch.max(gt_ri_bot_x,pr_ri_bot_x)
-    whole_b_r_y = torch.min(pr_ri_bot_y,gt_ri_bot_y)
+    # whole_b_r_x = torch.max(gt_ri_bot_x,pr_ri_bot_x)
+    # whole_b_r_y = torch.min(pr_ri_bot_y,gt_ri_bot_y)
 
-    whole_t_l_x = torch.min(gt_le_top_x,pr_le_top_x)
-    whole_t_l_y = torch.max(gt_le_top_y,pr_le_top_y)
+    # whole_t_l_x = torch.min(gt_le_top_x,pr_le_top_x)
+    # whole_t_l_y = torch.max(gt_le_top_y,pr_le_top_y)
 
-    diag_dist_2 = (whole_t_l_x - whole_b_r_x)**2 + (whole_t_l_y - whole_b_r_y)**2 + eps
+    whole_b_r_x, _ = torch.max(torch.stack([b1_x1,b1_x2,b2_x1,b2_x2]), dim=0)
+    whole_b_r_y, _ = torch.min(torch.stack([b1_y1,b1_y2,b2_y1,b2_y2]), dim=0)
+    whole_t_l_x, _ = torch.min(torch.stack([b1_x1,b1_x2,b2_x1,b2_x2]), dim=0)
+    whole_t_l_y, _ = torch.max(torch.stack([b1_y1,b1_y2,b2_y1,b2_y2]), dim=0)
 
-    L_cd = (ro_2_top_left + ro_2_bot_right)/4*diag_dist_2
+
+    c_2 = (whole_t_l_x - whole_b_r_x)**2 + (whole_t_l_y - whole_b_r_y)**2 + eps
+
+    L_cd = (ro_2_top_left + ro_2_bot_right)/4*c_2
 
     #coverage
     gt_area = w2*h2 + eps
