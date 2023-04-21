@@ -284,14 +284,9 @@ def bbox_siou(box1, box2, xywh=True,eps=1e-7, GIoU=False, DIoU=False, CIoU=False
     # Union Area
     union = w1 * h1 + w2 * h2 - inter + eps
 
-    # Clamp height and width
-    w1 = torch.clamp(w1, min=eps)
-    w2 = torch.clamp(w2, min=eps)
-    h1 = torch.clamp(h1, min=eps)
-    h2 = torch.clamp(h2, min=eps)
 
     # IoU
-    iou = torch.where(union > 0, inter / union, torch.zeros_like(union))
+    iou = inter/union
 
     #ciou calculation
     if CIoU or DIoU or GIoU:
@@ -325,7 +320,9 @@ def bbox_siou(box1, box2, xywh=True,eps=1e-7, GIoU=False, DIoU=False, CIoU=False
     # print("theta : ",torch.isnan(theta).any().item())
 
     # angle loss
-    x = torch.sin(theta)
+    c_h = torch.max(b_cy_gt,b_cy) - torch.min(b_cy_gt,b_cy)
+    sigma = torch.sqrt( (b_cx_gt - b_cx)**2 + (b_cy_gt - b_cy)**2 ) + eps
+    x = c_h / sigma
     l_angle = 1 - 2 * ( torch.sin( torch.asin(x) - math.pi / 4 ) )**2
     # print("l_angle : ",torch.isnan(l_angle).any().item())
     # distance loss

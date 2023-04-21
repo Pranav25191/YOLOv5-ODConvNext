@@ -5,10 +5,9 @@ Loss functions
 
 import torch
 import torch.nn as nn
-
+import pdb
 from utils.metrics import bbox_siou
 from utils.torch_utils import de_parallel
-
 
 def smooth_BCE(eps=0.1):  # https://github.com/ultralytics/yolov3/issues/238#issuecomment-598028441
     # return positive, negative label smoothing BCE targets
@@ -123,7 +122,7 @@ class ComputeLoss:
         lbox = torch.zeros(1, device=self.device)  # box loss
         lobj = torch.zeros(1, device=self.device)  # object loss
         tcls, tbox, indices, anchors = self.build_targets(p, targets)  # targets
-
+        # self.autobalance = True
         # Losses
         for i, pi in enumerate(p):  # layer index, layer predictions
             b, a, gj, gi = indices[i]  # image, anchor, gridy, gridx
@@ -168,6 +167,7 @@ class ComputeLoss:
 
         if self.autobalance:
             self.balance = [x / self.balance[self.ssi] for x in self.balance]
+
         lbox *= self.hyp['box']
         lobj *= self.hyp['obj']
         lcls *= self.hyp['cls']
