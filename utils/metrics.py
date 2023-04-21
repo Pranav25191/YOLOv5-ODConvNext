@@ -10,6 +10,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
+from torch._C import _has_distributed
 
 from utils import TryExcept, threaded
 
@@ -284,6 +285,28 @@ def bbox_eiou(box1, box2, xywh=True, eps=1e-7):
 
     # IoU
     iou = inter / union  
+    b1_cx = (b1_x1 + b1_x2)/2
+    b1_cy = (b1_y1 + b1_y2)/2
+    b2_cx = (b2_x1 + b2_x2)/2
+    b2_cy = (b2_y1 + b2_y2)/2
+
+    d_h = torch.abs(b1_cy-b2_cy)
+    d_w = torch.abs(b1_cx-b2_cx)
+
+    neeta = torch.sin( 2 * torch.asin( d_h / torch.sqrt( d_h**2 + d_w**2  )  ) )
+
+    ro_x = (b1_cx - b2_cx)
+    ro_y = 
+
+
+    w_dis = torch.max( torch.abs(b1_x1 - b2_x1),torch.abs(b1_x2- b2_x2) ) - torch.min( torch.abs(b1_x1 - b2_x1),torch.abs(b1_x2- b2_x2) )
+    h_dis = torch.max( torch.abs(b1_y1 - b2_y1),torch.abs(b1_y2- b2_y2) ) - torch.min( torch.abs(b1_y1 - b2_y1),torch.abs(b1_y2- b2_y2) )
+
+    ag_iou = (inter - (w_dis * h_dis - inter))/w_dis*h_dis
+
+    
+
+
 
     cw = b1_x2.maximum(b2_x2) - b1_x1.minimum(b2_x1)  # convex (smallest enclosing box) width
     ch = b1_y2.maximum(b2_y2) - b1_y1.minimum(b2_y1)  # convex height
@@ -302,6 +325,7 @@ def bbox_eiou(box1, box2, xywh=True, eps=1e-7):
     rho2_wi = (w1 - w2)**2   #width dist square
     rho2_h = (h1 - h2)**2   #height dist square
     eiou_val = 1 - iou + rho2/c2 +  rho2_wi/cw**2 + rho2_h/ch**2
+
     return eiou_val, ciou 
 
 
