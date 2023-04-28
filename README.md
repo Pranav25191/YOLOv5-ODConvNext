@@ -45,7 +45,10 @@ python train.py
 
 ## Dataset
 
-Our ship dataset will be released soon.  
+Our ship dataset will be released soon.
+
+## How to run in the google collab
+    Download the YOLOv5_Train_ship.ipynb file and run the file in google collab.Clear instructions have been provided in the file itself.
 
 ## References
 
